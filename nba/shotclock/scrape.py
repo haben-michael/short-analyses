@@ -1,0 +1,271 @@
+from lxml import etree
+import re
+import csv, json
+from urllib import request
+import os, time, random
+import pandas as pd
+import numpy as np
+
+
+## 1. scrape link lists
+
+SCRAPE_DIR = 'd://scrapes/basketball_reference//leagues//'
+GAME_LINKS_FILE = 'd://scrapes//basketball_reference//game_links.json'
+BASE_URL = 'http://www.basketball-reference.com/boxscores/pbp'
+seasons = list(range(2007,2017)); random.shuffle(seasons)
+months = ['october','november','december','january','february','march','april','may']
+
+game_links = {}
+for season in seasons:
+    game_links_season = {}
+    for month in months:
+        print(str(season) + ', ' + str(month))
+        url = "http://www.basketball-reference.com/leagues/NBA_"+str(season)+"_games-"+month+".html"
+        try:
+            html_str = request.urlopen(url).read()
+            tree = etree.HTML(html_str)
+            links = tree.xpath('//a[text()="Box Score"]/@href')
+            game_links_season[month] = [link[11:] for link in links]
+            time.sleep(abs(random.normalvariate(0,3)))
+        except:
+            pass
+    game_links[season] = game_links_season
+
+with open(GAME_LINKS_FILE, 'w') as f:
+    f.write(json.dumps(game_links))
+
+
+## 2. scrape game data
+SCRAPE_DIR = 'd://scrapes/basketball_reference//html//games//'
+# SCRAPE_DIR = '/gdrive/scripts/pace/scrape/games/'
+# GAME_LINKS_FILE = '/gdrive/scripts/pace/game_links.json'
+BASE_URL = 'http://www.basketball-reference.com/boxscores/pbp/'
+
+with open(GAME_LINKS_FILE,'r') as f: game_links = json.loads(f.read())
+game_links = [game_links[key] for key in game_links]
+game_links = [x[y] for x in game_links for y in x]
+game_links = [y for x in game_links for y in x]
+
+for i in list(range(2000)):
+    already_scraped = next(os.walk(SCRAPE_DIR))[2]
+    idx = random.randrange(1,len(game_links))
+    if game_links[idx] in already_scraped:
+        pass
+    url = BASE_URL + game_links[idx]
+    html_str = request.urlopen(url).read()
+    with open(SCRAPE_DIR + game_links[idx],'wb') as f: f.write(html_str)
+    time.sleep(abs(random.normalvariate(0,25)))
+
+
+## 3. convert html to csv
+CSV_DIR = '/gdrive/scripts/pace/csv/'
+SCRAPE_DIR = '/gdrive/scripts/pace/scrape/'
+GAME_LINKS_FILE = '/gdrive/scripts/pace/game_links.json'
+BASE_URL = 'http://www.basketball-reference.com/boxscores/pbp/'
+seasons = [2004,2017]; random.shuffle(seasons)
+months = ['october','november','december','january','february','march','april','may']
+
+def get_game_csv(html_str):
+    # with open("/users/haben/desktop/hornets.html") as f:
+    #     html_str = f.read()
+
+    tree = etree.HTML(html_str)
+    # rows = tree.xpath('//table[@class="no_highlight stats_table"]/tr')
+    rows = tree.xpath('//table[@id="pbp"]/tr')
+
+    text = [r.getchildren()[0].text for r in rows]
+    idxs = [idx for idx,text in enumerate(text) if re.search('Q$',text)]
+    idxs.append(len(rows))
+    # idxs = [0] + idxs + [len(rows)]
+    rows_by_qtr = [rows[idxs[i-1]:idxs[i]] for i in range(1,len(idxs))]
+
+    team_1 = rows[1].getchildren()[1].text
+    team_2 = rows[1].getchildren()[5].text
+    scores = []
+    # import pdb;pdb.set_trace()
+    for qtr in range(len(rows_by_qtr)):
+        for j in range(len(rows_by_qtr[qtr])):
+            row = rows_by_qtr[qtr][j]
+            if (len(row.getchildren())>=5):
+                if row.getchildren()[2].text:
+                    re0 = re.search('^(\+.)',row.getchildren()[2].text)
+                    if re0:
+                        increment = re0.groups()[0]
+                        time = row.getchildren()[0].text
+                        scores.append([time,team_1,qtr+1,increment])
+                if row.getchildren()[4].text:
+                    re0 = re.search('^(\+.)',row.getchildren()[4].text)
+                    if re0:
+                        increment = re0.groups()[0]
+                        time = row.getchildren()[0].text
+                        scores.append([time,team_2,qtr+1,increment])
+
+    return scores
+
+already_scraped = next(os.walk(SCRAPE_DIR))[2]
+# filename = already_scraped[3]
+for filename in already_scraped:
+    with open(SCRAPE_DIR+filename,'r') as f: html_str = f.read()
+    game_data = get_game_csv(html_str)
+    with open(CSV_DIR+filename[:-5]+'.csv', 'wb') as f:
+        writer = csv.writer(f)
+        writer.writerows(game_data)
+
+## 4. Scrape season totals and output csv
+SCRAPE_DIR = '/gdrive/scripts/pace/scrape/leagues/'
+BASE_URL = 'http://www.basketball-reference.com/leagues/'
+CSV_DIR = '/gdrive/scripts/pace/csv/'
+
+year = 2010
+def get_year_totals(year):
+    filename = 'NBA_' + str(year) + '_totals.html'
+    url = BASE_URL + filename
+    html_str = urllib.urlopen(url).read()
+    with open(SCRAPE_DIR + filename,'wb') as f: f.write(html_str)
+
+    tree = etree.HTML(html_str)
+
+    rows = tree.xpath('//*[@id="totals_stats"]/tbody/tr')
+    data = [[row_elt.text if row_elt.text != None else (row_elt.getchildren()[0].text if len(row_elt.getchildren())>0 else None) for row_elt in row] for row in rows]
+
+    cols = tree.xpath('//*[@id="totals_stats"]/thead/tr/th')
+    colnames = [tr.text for tr in cols]
+    data = [colnames] + data
+
+    with open(CSV_DIR+filename[:-5]+'.csv', 'wb') as f:
+        writer = csv.writer(f)
+        writer.writerows(data)
+
+    return(data)
+
+
+for year in [1994,1998]:
+    get_year_totals(year)
+    time.sleep(abs(random.normalvariate(0,25)))
+
+
+
+
+## 5. scrape and convert a player's gamelogs
+SCRAPE_DIR = 'd:/scrapes/basketball_reference/html/'
+BASE_URL = 'http://www.basketball-reference.com/'
+RELATIVE_PATH = 'players/player_initial/player_id/gamelog/'
+CSV_DIR = 'd:/scrapes/basketball_reference/csv/'
+
+# year = 2014
+# player_id = 'curryst01'
+def get_player_gamelogs(player_id, year):
+    relative_path = re.sub('player_initial', player_id[0], RELATIVE_PATH)
+    relative_path = re.sub('player_id', player_id, relative_path)
+    # relative_path = re.sub('year', str(year), relative_path)
+    scrape_path = SCRAPE_DIR + relative_path
+    if not os.path.lexists(scrape_path):
+        os.makedirs(scrape_path)
+    filename = str(year) + '.html'
+    url = BASE_URL + relative_path + str(year)
+    html_str = urllib.urlopen(url).read()
+    with open(scrape_path + filename, 'wb') as f: f.write(html_str)
+
+def process_player_gamelogs(player_id, year):
+    relative_path = re.sub('player_initial', player_id[0], RELATIVE_PATH)
+    relative_path = re.sub('player_id', player_id, relative_path)
+    scrape_path = SCRAPE_DIR + relative_path
+    filename = str(year) + '.html'
+    url = BASE_URL + relative_path + str(year)
+
+    with open(scrape_path + filename, 'rb') as f: html_str = f.read()
+    tree = etree.HTML(html_str)
+
+    colnames_elt = tree.xpath('//*[@id="pgl_basic"]/thead/tr/th')
+    colnames = [th.text.encode('ascii','ignore').decode('ascii') for th in colnames_elt]
+
+    rows = tree.xpath('//*[@id="pgl_basic"]/tbody/tr')
+    data = [[row_elt.text.encode('ascii','ignore').decode('ascii') if row_elt.text != None else (row_elt.getchildren()[0].text if len(row_elt.getchildren())>0 else None) for row_elt in row] for row in rows]
+    data = [colnames] + data
+
+    with open(CSV_DIR+player_id+'_'+filename[:-5]+'.csv', 'wb') as f:
+        writer = csv.writer(f)
+        writer.writerows(data)
+
+    return(data)
+
+for player_id in ['greendr01']:
+    for year in range(2010,2018):
+        get_player_gamelogs(player_id, year)
+        process_player_gamelogs(player_id, year)
+        time.sleep(abs(random.normalvariate(0,25)))
+
+
+
+
+
+## 6. convert play by play to csv, less processing than above get_game_csv
+
+SCRAPE_DIR = 'd:/scrapes/basketball_reference/html/games/'
+CSV_DIR = 'd:/scrapes/basketball_reference/csv/games/'
+
+GAME_LINKS_FILE = '/gdrive/scripts/pace/game_links.json'
+BASE_URL = 'http://www.basketball-reference.com/boxscores/pbp/'
+seasons = [2004,2017]; random.shuffle(seasons)
+months = ['october','november','december','january','february','march','april','may']
+
+def get_game_csv(html_str):
+    # with open("/users/haben/desktop/hornets.html") as f:
+    #     html_str = f.read()
+
+    tree = etree.HTML(html_str)
+    # rows = tree.xpath('//table[@class="no_highlight stats_table"]/tr')
+    rows = tree.xpath('//table[@id="pbp"]/tr')
+
+    text = [r.getchildren()[0].text for r in rows]
+    idxs = [idx for idx,text in enumerate(text) if re.search('(Q|OT)$',text)]
+    idxs.append(len(rows))
+    # idxs = [0] + idxs + [len(rows)]
+    rows_by_qtr = [rows[idxs[i-1]:idxs[i]] for i in range(1,len(idxs))]
+
+    team_1 = rows[1].getchildren()[1].text
+    team_2 = rows[1].getchildren()[5].text
+    events = []
+    for qtr in range(len(rows_by_qtr)):
+        events.append([('12:00.0' if qtr<4 else '5:00.0'),None,qtr+1,None])
+        for j in range(len(rows_by_qtr[qtr])):
+            row = rows_by_qtr[qtr][j]
+            if (len(row.getchildren())>=5):
+                text = ''.join(row.getchildren()[1].xpath('.//text()'))
+                if text and text.strip():
+                    time = row.getchildren()[0].text
+                    events.append([time,team_1,qtr+1,text])
+                text = ''.join(row.getchildren()[5].xpath('.//text()'))
+                if text and text.strip():
+                    time = row.getchildren()[0].text
+                    events.append([time,team_2,qtr+1,text])
+
+    events = [event for event in events if event[0]!='Time']
+    return events
+
+get_game_csv(html_str)[0:10]
+
+
+already_scraped = next(os.walk(SCRAPE_DIR))[2]
+# filename = already_scraped[3]
+for filename in already_scraped:
+    # print(filename)
+    with open(SCRAPE_DIR+filename,'r') as f: html_str = f.read()
+    game_data = get_game_csv(html_str)
+    with open(CSV_DIR+filename[:-5]+'.csv', 'w', newline='') as f:
+        writer = csv.writer(f)
+        writer.writerows(game_data)
+
+
+
+# ## 7.
+
+# filenames = next(os.walk(CSV_DIR))[2]
+# filename = filenames[0]
+
+
+# with open(CSV_DIR + os.sep + filename, 'r') as f:
+#     events = list(csv.reader(f))
+
+# df = pd.DataFrame(events)
+# df['u'] = np.array([np.array([False]),np.array(df.iloc[1:,1]) != np.array(df.iloc[:-1,1])])

@@ -1,0 +1,52 @@
+import json
+import re
+import glob
+import time
+import pywikibot
+import pdb
+from pywikibot.data import api
+
+
+billboard_dir = r'/mnt/c/Dropbox (Penn)/scripts/singer_ages/billboard/data/years/'
+
+billboard_files = glob.glob(billboard_dir + '*.json')
+data = []
+for billboard_file in billboard_files:
+    with open(billboard_file) as json_file:
+        songs = json.load(json_file)
+        for song in songs:
+            data.append({'artist':song['artist'], 'title':song['title'], 'year':song['year']})
+singers = [song['artist'] for song in data]
+singers = {k:{} for k in set(singers)}
+
+
+site = pywikibot.Site('wikidata', 'wikidata')
+repo = site.data_repository()
+
+singer = "Paul Young"
+for singer in singers:
+    print(singer)
+    print(len(singers[singer]))
+    if len(singers[singer])>0:
+        print('continuing...')
+        continue
+    if singer=='Tremeloes':
+        pdb.set_trace()
+    wikidataEntries = api.Request(site=site, action='wbsearchentities',format='json', language='en', type='item', search=singer).submit()
+    idx = 0
+    if len(wikidataEntries)>1:
+        idx = [i for i,e in enumerate(wikidataEntries['search']) if 'description' in e.keys() and re.search('musician|singer|artist',e['description'])]
+        if len(idx) != 1:
+            singers[singer] = {'search_id' : wikidataEntries['search'][0]['id']}
+            continue
+        idx = idx[0]
+    id = wikidataEntries['search'][idx]['id']
+    item = pywikibot.ItemPage(repo, id)
+    item_dict = item.get()
+    clm_dict = item_dict["claims"]
+    clm_list = clm_dict["P569"]
+    target = clm_list[0].getTarget()
+    singers[singer]  = {'year':target.year, 'month':target.month}
+    print(singers[singer])
+    time.sleep(3)
+

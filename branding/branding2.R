@@ -1,0 +1,88 @@
+## ## ## files <- dir()
+## ## ## files <- sort(files[grep('CorpBook',files)])
+## ## ## files <- c(files[length(files)],files[1:(length(files)-1)])
+## ## ## for (j in 1:length(files)) file.rename(files[j],paste0(2003+j-1,'.xlsx'))
+
+## ## require(readxl)
+## ## # require(dplyr)
+## ## filenames <- dir()
+## ## filenames <- filenames[grep('.xlsx',filenames)]
+
+## ## data <- list()
+## ## for(j in 1:length(filenames)) {
+## ##     year  <- strsplit(filenames[j],'\\.')[[1]][1]
+## ##     df <- cbind(as.data.frame(read_excel(filenames[j])[,2]),TRUE)
+## ##     names(df) <- c('name',year)
+## ##     data[[year]] <- df
+## ##     print(j)
+## ## }
+## ## cat('...')
+
+## ## data <- Reduce(function(x,y) merge(x,y,by='name',all=TRUE) ,data)
+## ## data[is.na(data)] <- FALSE
+## ## write.csv(data, 'branding2.csv')
+
+## ## ## cannot allocate vector of size ...
+
+
+## ## files <- dir()
+## ## files <- sort(files[grep('CorpBook',files)])
+## ## files <- c(files[length(files)],files[1:(length(files)-1)])
+## ## for (j in 1:length(files)) file.rename(files[j],paste0(2003+j-1,'.xlsx'))
+
+## require(readxl)
+## # require(dplyr)
+## filenames <- dir()
+## filenames <- filenames[grep('.xlsx',filenames)]
+
+## by.year <- list()
+## for(j in 1:length(filenames)) {
+##     year  <- strsplit(filenames[j],'\\.')[[1]][1]
+##     df <- unique(unname(unlist(read_excel(filenames[j])[,2])[-1]))
+##     ## names(df) <- c('name',year)
+##     by.year[[year]] <- df
+##     names(by.year)[j] <- year
+##     print(j)
+## }
+
+## data <- as.list(rep(1, length(by.year[[1]])))
+## names(data) <- by.year[[1]]
+## for (j in 2:length(filenames)) {
+##     dup <- by.year[[j]] %in% names(data)
+##     dup.names <- by.year[[j]][dup]
+##     ## data[dup] <- lapply(data[dup], function(x)c(x, j))
+##     data[dup.names] <- lapply(data[dup.names], function(x)c(x, j))
+##     new <- structure(as.list(rep(j, length(dup)-sum(dup))), names=by.year[[j]][!dup])
+##     data <- c(data, new)
+##     print(j)
+##     ## data <- merge(data, by.year[[j]], by='name', all=TRUE)
+##     ## print(j); print(dim(by.year[[j]])); print(dim(data))
+## }
+
+
+## require(Matrix)
+## n.cols <- sapply(data,length)
+## corp.names <- names(data)
+## data <- sparseMatrix(j=unlist(data), rep(seq_along(data), n.cols))
+## colnames(data) <- names(by.year)
+## rownames(data) <- corp.names
+## ## writeMM(data, 'branding2.txt')
+## save.image('111920.RData')
+## with(list(years=colnames(data)), save('years','corp.names', file='dimnames.RData'))
+     
+require(Matrix)
+data <- readMM('branding2.txt')
+load('dimnames.RData')
+years <- 2003:2020
+colnames(data) <- years
+rownames(data) <- corp.names
+splits <- strsplit(corp.names,',')
+corp.names <- sapply(splits, function(x)paste(x[-length(x)],collapse=''))
+
+key <- 'boston'
+idx <- grep(key,corp.names,ignore.case=TRUE)
+structure(colSums(data[idx,]), names=years)
+plot(years,colSums(data[idx,]) / colSums(data),
+     type='o')
+
+
